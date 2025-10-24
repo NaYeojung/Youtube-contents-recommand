@@ -354,20 +354,64 @@ if run:
                     else:
                         peer_avg_dict[c] = 0.0  # 없는 컬럼은 0으로 채워도 안전
 
+        # === 시뮬레이션 미리 계산 ===
+        current_pred_views, improved_pred_views, lift_abs, lift_pct = None, None, None, None
+        top_change_rows, drivers_text = pd.DataFrame(), ""
 
-        st.success(f"분석이 완료됐습니다.")
+        if reg is not None and peer_avg_core:
+            def simulate(modified):
+                new_df = df.copy()
+                for k, v in modified.items():
+                    new_df.at[0, k] = v
+                return _predict_views_by_regressor(reg, new_df, feat_cols)
+
+            sims = []
+            target_keys = [
+                'title_length','emoji_count','special_char_count','person_count','has_text',
+                'brightness','contrast','word_count','object_count'
+            ]
+            for k in target_keys:
+                if k not in peer_avg_core:
+                    continue
+                cur_val = float(df.iloc[0].get(k, 0))
+                peer_val = float(peer_avg_core[k])
+                if k in ['emoji_count','special_char_count','person_count','has_text','word_count','object_count','title_length']:
+                    peer_val = int(round(peer_val))
+                pred_peer = simulate({k: peer_val})
+                diff_val = None
+                if predicted_views and pred_peer:
+                    diff_val = int(pred_peer) - int(predicted_views)
+                sims.append({"지표":k,"현재값":cur_val,"평균값":peer_val,"평균으로 맞출 때 예측":pred_peer,"증감(예측)":diff_val})
+            delta_views_df = pd.DataFrame(sims)
+
+            improving_changes = {r["지표"]:r["평균값"] for _,r in delta_views_df.iterrows() if r["증감(예측)"] and r["증감(예측)"]>0}
+            pred_combo = simulate(improving_changes) if improving_changes else None
+            current_pred_views = int(predicted_views) if predicted_views else None
+            improved_pred_views = int(pred_combo) if pred_combo else None
+            if current_pred_views and improved_pred_views:
+                lift_abs = improved_pred_views - current_pred_views
+                lift_pct = (lift_abs / current_pred_views) * 100 if current_pred_views>0 else None
+            top_change_rows = delta_views_df.dropna(subset=["증감(예측)"]).sort_values("증감(예측)",ascending=False).head(3)
+            drivers_text = ", ".join(top_change_rows["지표"].tolist()) if not top_change_rows.empty else ""
+
+
+        st.success(f"분석이 완료됐습니다. 클러스터 {cluster}가 적용됩니다.")
         st.markdown(" ")
+        
         # 상단 요약 + 썸네일 프리뷰
         cA, cB = st.columns([3, 2])
         with cA:
             
-            # KPI
-            c1, c2 = st.columns(2)
-            c1.metric("클러스터", f"{cluster}")
-            c2.metric("예측 조회수", f"{predicted_views:,}" if predicted_views is not None else "—")
-            c1, c2 = st.columns(2)
-            c1.metric("평균 조회수", f"{peer_mean_views:,}" if peer_mean_views is not None else "—")
-            c2.metric("상위 10% 평균", f"{peer_top10_mean_views:,}" if peer_top10_mean_views is not None else "—")
+            st.markdown("### 📌 인사이트 요약")
+
+            summary_lines = []
+            if current_pred_views:
+                summary_lines.append(f"현재 구성으로 예상되는 조회수는 약 {current_pred_views:,}회입니다.")
+            if improved_pred_views and lift_abs and lift_pct:
+                summary_lines.append(f"핵심 지표를 평균 수준으로 조정하면 약 {improved_pred_views:,}회까지 기대할 수 있습니다.")
+            if drivers_text:
+                summary_lines.append(f"특히 {drivers_text} 지표가 조회수에 큰 영향을 주는 것으로 보입니다.")
+            st.write("\n".join(f"- {s}" for s in summary_lines))
 
         with cB:
             try:
@@ -930,36 +974,6 @@ if run:
                     gain    = r["증감(예측)"]
                 )
                 
-            # === 내러티브 요약 영역 ===
-            st.markdown(" ")
-            st.markdown("### 📌 인사이트 요약")
-
-            # 어떤 지표들이 가장 영향력 있는지 리스트업
-            driver_list = []
-            for _, r in top_change_rows.iterrows():
-                driver_list.append(f"{r['지표']}")
-
-            drivers_text = ", ".join(driver_list) if driver_list else "주요 지표 없음"
-
-            summary_lines = []
-
-            if current_pred_views is not None:
-                summary_lines.append(
-                    f"입력하신 내용으로 예상되는 조회수는 약 {current_pred_views:,}회입니다."
-                )
-
-            if improved_pred_views is not None and lift_abs is not None and lift_pct is not None:
-                summary_lines.append(
-                    f"핵심 지표 일부만 업계 평균 수준까지 조정하면 약 {improved_pred_views:,}회까지 기대할 수 있습니다. "
-                )
-
-            summary_lines.append(
-                f"특히 {drivers_text} 같은 요소가 조회수 상승 여력에 크게 기여하는 것으로 보입니다."
-            )
-
-            st.write("\n".join(f"- {line}" for line in summary_lines))
-
-
 
     except Exception as e:
         st.exception(e)
