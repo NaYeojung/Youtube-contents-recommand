@@ -334,7 +334,7 @@ if run:
             pass
 
         # dominant colors → 칩
-        st.markdown("**Dominant Colors**")
+        st.markdown("**주요 색상**")
         dom_colors = []
         if isinstance(row.get("dominant_colors"), str):
             dom_colors = [c.strip() for c in row["dominant_colors"].split(",") if c.strip()]
@@ -446,7 +446,6 @@ if run:
                 ax.set_yticks([])
                 ax.set_xlabel("")
                 ax.set_ylabel("")
-                ax.set_title("객체 배치 (상위 5개)")
 
                 used_label_positions = []
 
@@ -724,7 +723,7 @@ if run:
         # === 피어 그룹 평균 핵심 지표 표 ===
         if peer_avg_core:
             st.markdown("---")
-            st.subheader("평균 핵심 지표")
+            st.subheader("핵심 지표 비교")
             peer_df_show = pd.DataFrame({
                 "지표": list(peer_avg_core.keys()),
                 "내 값": [row.get(k, np.nan) for k in peer_avg_core.keys()],
@@ -794,7 +793,7 @@ if run:
                 pred_combo = simulate(improving_changes)
             else:
                 pred_combo = None
-
+    
             st.subheader("상승 효과 있는 지표만 한꺼번에 바꿀 경우")
             col_now, col_combo = st.columns(2)
             col_now.metric(

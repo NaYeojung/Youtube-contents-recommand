@@ -59,26 +59,91 @@ df = df[(df["predicted_views"] >= view_range[0]) & (df["predicted_views"] <= vie
 
 # (이하: KPI·차트·Per-item 카드·테이블 렌더링 코드는 기존 app.py 그대로)
 
-# =====================
-# OVERVIEW KPIs
-# =====================
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("추천 제목 수", f"{len(df):,}")
-col2.metric("평균 예측 조회수", f"{df['predicted_views'].mean():,.0f}")
-# col3.metric("상위 10% 스타일 일치도(평균)", f"{df.get('p10_style_match', pd.Series([0])).mean():.2f}")
-# col4.metric("최대 예측 조회수", f"{df['predicted_views'].max():,.0f}")
+# =============== 입력 폼 ===============
+with st.form("predict_form"):
+    title = st.text_input("채널 ID", value="@KoreanCryingGuy")
+    run = st.form_submit_button("추천 제목 생성")
 
-st.divider()
+# =============== 실행 ===============
+if run:
+        
+    # =====================
+    # RECOMMENDATIONS TABLE + PER-TITLE RATIONALE
+    # =====================
+    st.subheader("📝 추천 제목")
 
-# =====================
-# GLOBAL INSIGHTS
-# =====================
+    # Helper: 한 줄 설명 자동 생성
+    def build_rationale(row, style):
+        parts = []
+        # 템플릿/키워드
+        if isinstance(row.get("keyword_topk"), str):
+            parts.append(f"템플릿 {row.get('template','?')}에서 상위 키워드 `{row['keyword_topk']}`를 반영했습니다.")
+        else:
+            parts.append(f"템플릿 {row.get('template','?')}의 상위 키워드를 반영했습니다.")
+        # 모델 피쳐 근거
+        feats = []
+        if "title_len" in row and "p10_len" in row:
+            if abs(row["title_len"] - row["p10_len"]) <= 3:
+                feats.append("제목 길이가 상위 10% 평균과 유사")
+        if "emoji_count" in row and style:
+            t = style.get("emoji_target", None)
+            if t is not None and abs(row["emoji_count"] - t) <= 1:
+                feats.append("이모지 사용이 상위 10% 범위")
+        if "exclaim_count" in row and style:
+            t = style.get("exclaim_target", None)
+            if t is not None and abs(row["exclaim_count"] - t) <= 1:
+                feats.append("느낌표 사용이 상위 10% 범위")
+        if "novelty_score" in row and row["novelty_score"] >= 0.4:
+            feats.append("제목 신선도(표현 다양성)가 높음")
+        if "thumbnail_score" in row and row["thumbnail_score"] >= 0.65:
+            feats.append("썸네일 가독성/대비 점수가 높음")
 
+        if feats:
+            parts.append(" / ".join(feats))
 
-# 1) 템플릿 활용도 & 성과
-if tpl_stats is not None:
-    left, right = st.columns(2)
-    with left:
+        # # 모델 예측
+        # if "predicted_views" in row:
+        #     parts.append(f"예측 조회수 **{int(row['predicted_views']):,}**")
+
+        # # 스타일 매칭
+        # if "p10_style_match" in row:
+        #     parts.append(f"상위 10% 스타일 일치도 **{row['p10_style_match']:.2f}**")
+
+        return " ".join(parts)
+
+    # Show table
+    show_cols = ["recommended_title","template","predicted_views","p10_style_match","title_len","emoji_count","exclaim_count","keyword_topk"]
+    show_cols = [c for c in show_cols if c in df.columns]
+
+    # Ranking
+    df_view = df.sort_values(["predicted_views"], ascending=False).reset_index(drop=True)
+    def safe_rationale(row, style):
+        try:
+            out = build_rationale(row, style)
+            return str(out)
+        except Exception:
+            return ""
+
+    df_view["rationale"] = df_view.apply(lambda r: safe_rationale(r, p10_style), axis=1)
+
+    # Display
+    for i, row in df_view.iterrows():
+        with st.container(border=True):
+            st.markdown(f"##### {row['recommended_title']}")
+            cols = st.columns(1)
+            cols[0].write(f"**템플릿:** {row.get('template','-')}")
+            # cols[1].write(f"**예측 조회수:** {int(row.get('predicted_views',0)):,}")
+            # if 'p10_style_match' in row:
+            #     cols[2].write(f"**스타일 일치도:** {row.get('p10_style_match'):.2f}")
+            st.caption(row["rationale"])
+
+    # =====================
+    # GLOBAL INSIGHTS
+    # =====================
+    st.divider()
+
+    # 1) 템플릿 활용도 & 성과
+    if tpl_stats is not None:
         st.markdown("**템플릿 활용 비중 TOP**")
         top_tpl = tpl_stats.sort_values("share", ascending=False).head(8)
         chart = alt.Chart(top_tpl).mark_bar().encode(
@@ -87,105 +152,18 @@ if tpl_stats is not None:
             tooltip=["template","share","avg_pred_views","count"]
         )
         st.altair_chart(chart, use_container_width=True)
-    with right:
-        st.markdown("**템플릿별 평균 예측 조회수**")
-        perf_tpl = tpl_stats.sort_values("avg_pred_views", ascending=False).head(8)
-        chart2 = alt.Chart(perf_tpl).mark_bar().encode(
-            x=alt.X("avg_pred_views:Q", title="평균 예측 조회수"),
-            y=alt.Y("template:N", sort="-x", title="템플릿"),
-            tooltip=["template","avg_pred_views","share","count"]
+
+    # 2) 키워드 점수
+    if kw_stats is not None:
+        st.markdown("**키워드 영향력**")
+        kw_mode = st.radio("정렬 기준", ["score_sum"], horizontal=True, key="kw_sort")
+        top_kw = kw_stats.sort_values(kw_mode, ascending=False).head(15)
+        chart3 = alt.Chart(top_kw).mark_bar().encode(
+            x=alt.X(f"{kw_mode}:Q", title=kw_mode),
+            y=alt.Y("keyword:N", sort="-x", title="키워드"),
+            tooltip=["keyword","score_avg","score_sum","freq"]
         )
-        st.altair_chart(chart2, use_container_width=True)
+        st.altair_chart(chart3, use_container_width=True)
 
-# 2) 키워드 점수
-if kw_stats is not None:
-    st.markdown("**키워드 영향력**")
-    kw_mode = st.radio("정렬 기준", ["score_sum"], horizontal=True, key="kw_sort")
-    top_kw = kw_stats.sort_values(kw_mode, ascending=False).head(15)
-    chart3 = alt.Chart(top_kw).mark_bar().encode(
-        x=alt.X(f"{kw_mode}:Q", title=kw_mode),
-        y=alt.Y("keyword:N", sort="-x", title="키워드"),
-        tooltip=["keyword","score_avg","score_sum","freq"]
-    )
-    st.altair_chart(chart3, use_container_width=True)
 
-# 3) 모델 피쳐 중요도
-if feat_imp is not None:
-    st.markdown("**예측 모델 피쳐 중요도**")
-    imp = feat_imp.sort_values("importance", ascending=False)
-    chart4 = alt.Chart(imp).mark_bar().encode(
-        x=alt.X("importance:Q", title="중요도"),
-        y=alt.Y("feature:N", sort="-x", title="피쳐"),
-        tooltip=["feature","importance"]
-    )
-    st.altair_chart(chart4, use_container_width=True)
 
-# =====================
-# RECOMMENDATIONS TABLE + PER-TITLE RATIONALE
-# =====================
-st.subheader("📝 추천 제목")
-
-# Helper: 한 줄 설명 자동 생성
-def build_rationale(row, style):
-    parts = []
-    # 템플릿/키워드
-    if isinstance(row.get("keyword_topk"), str):
-        parts.append(f"템플릿 **{row.get('template','?')}**에서 상위 키워드 `{row['keyword_topk']}`를 반영했습니다.")
-    else:
-        parts.append(f"템플릿 **{row.get('template','?')}**의 상위 키워드를 반영했습니다.")
-    # 모델 피쳐 근거
-    feats = []
-    if "title_len" in row and "p10_len" in row:
-        if abs(row["title_len"] - row["p10_len"]) <= 3:
-            feats.append("제목 길이가 상위 10% 평균과 유사")
-    if "emoji_count" in row and style:
-        t = style.get("emoji_target", None)
-        if t is not None and abs(row["emoji_count"] - t) <= 1:
-            feats.append("이모지 사용이 상위 10% 범위")
-    if "exclaim_count" in row and style:
-        t = style.get("exclaim_target", None)
-        if t is not None and abs(row["exclaim_count"] - t) <= 1:
-            feats.append("느낌표 사용이 상위 10% 범위")
-    if "novelty_score" in row and row["novelty_score"] >= 0.4:
-        feats.append("제목 신선도(표현 다양성)가 높음")
-    if "thumbnail_score" in row and row["thumbnail_score"] >= 0.65:
-        feats.append("썸네일 가독성/대비 점수가 높음")
-
-    if feats:
-        parts.append(" / ".join(feats))
-
-    # # 모델 예측
-    # if "predicted_views" in row:
-    #     parts.append(f"예측 조회수 **{int(row['predicted_views']):,}**")
-
-    # # 스타일 매칭
-    # if "p10_style_match" in row:
-    #     parts.append(f"상위 10% 스타일 일치도 **{row['p10_style_match']:.2f}**")
-
-    return " · ".join(parts)
-
-# Show table
-show_cols = ["recommended_title","template","predicted_views","p10_style_match","title_len","emoji_count","exclaim_count","keyword_topk"]
-show_cols = [c for c in show_cols if c in df.columns]
-
-# Ranking
-df_view = df.sort_values(["predicted_views"], ascending=False).reset_index(drop=True)
-def safe_rationale(row, style):
-    try:
-        out = build_rationale(row, style)
-        return str(out)
-    except Exception:
-        return ""
-
-df_view["rationale"] = df_view.apply(lambda r: safe_rationale(r, p10_style), axis=1)
-
-# Display
-for i, row in df_view.iterrows():
-    with st.container(border=True):
-        st.markdown(f"### {row['recommended_title']}")
-        cols = st.columns(3)
-        cols[0].write(f"**템플릿:** {row.get('template','-')}")
-        # cols[1].write(f"**예측 조회수:** {int(row.get('predicted_views',0)):,}")
-        # if 'p10_style_match' in row:
-        #     cols[2].write(f"**스타일 일치도:** {row.get('p10_style_match'):.2f}")
-        st.caption(row["rationale"])
