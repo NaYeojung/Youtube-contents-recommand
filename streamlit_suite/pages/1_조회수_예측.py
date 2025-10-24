@@ -140,6 +140,82 @@ def get_peer_subset(md: pd.DataFrame, my_subs: int, pct: float, min_rows: int = 
         p *= 1.25
         lo, hi = my * (1 - p), my * (1 + p)
     return peer
+def plot_sensitivity_barh(delta_df: pd.DataFrame, topn: int = 5, title: str = ""):
+    """
+    delta_df: columns => ['지표','증감(예측)']
+    topn개 상위 지표를 가로 막대 그래프로 그린다.
+    """
+    if delta_df is None or delta_df.empty or "증감(예측)" not in delta_df.columns:
+        return
+
+    plot_df = (
+        delta_df.dropna(subset=["증감(예측)"])
+                .sort_values("증감(예측)", ascending=False)
+                .head(topn)
+    )
+    if plot_df.empty:
+        return
+
+    fig, ax = plt.subplots(figsize=(6, 3))
+    colors = ["#80D2FF" if v > 0 else "#E57373" for v in plot_df["증감(예측)"]]
+
+    ax.barh(plot_df["지표"], plot_df["증감(예측)"], color=colors)
+    ax.invert_yaxis()
+    ax.axvline(0, color="gray", lw=1)
+    ax.set_title(title)
+
+    for i, v in enumerate(plot_df["증감(예측)"]):
+        ax.text(
+            v + (0.02 * max(plot_df["증감(예측)"].max(), 1)),
+            i,
+            f"{int(v):+}",
+            va="center",
+            ha="left" if v >= 0 else "right",
+            fontsize=8,
+        )
+
+    st.pyplot(fig)
+    
+def render_change_row(label, cur_val, tgt_val, gain=None):
+    """
+    label: 지표 이름(str)
+    cur_val: 현재 값
+    tgt_val: 추천/평균 값
+    gain: 예상 조회수 증가량 (정수 or None)
+    """
+    arrow = "➡️"
+    gain_txt = ""
+    if gain is not None:
+        if gain > 0:
+            gain_txt = f"<span style='color:#16a34a;font-weight:600;'>+{gain:,}↑</span>"
+        elif gain < 0:
+            gain_txt = f"<span style='color:#dc2626;font-weight:600;'>{gain:,}↓</span>"
+
+    st.markdown(
+        f"""
+        <div style="
+            border:1px solid #e5e7eb;
+            border-radius:10px;
+            padding:8px 12px;
+            margin-bottom:6px;
+            background:#f9fafb;
+            font-size:18px;
+            line-height:2;
+        ">
+            <div style="font-weight:600; color:#111827; font-size:23px;">{label}</div>
+            <div style="color:#374151;">
+                <span style="color:#4b5563;"> 현재 </span>
+                <strong style="color:#111827;"> {cur_val:.1f} </strong>
+                {arrow}
+                <span style="color:#4b5563;"> 추천 </span>
+                <strong style="color:#111827;"> {tgt_val:.1f} </strong>
+                {("&nbsp; &nbsp; &nbsp;" + gain_txt) if gain_txt else ""}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
 
 
 # =============== 사이드바 ===============
@@ -279,18 +355,20 @@ if run:
                         peer_avg_dict[c] = 0.0  # 없는 컬럼은 0으로 채워도 안전
 
 
-        
+        st.success(f"분석이 완료됐습니다.")
+        st.markdown(" ")
         # 상단 요약 + 썸네일 프리뷰
-        cA, cB = st.columns([2, 1])
+        cA, cB = st.columns([3, 2])
         with cA:
-            st.success(f"분석이 완료됐습니다. 분류된 클러스터는 {cluster}입니다.")
+            
             # KPI
-            c1, c2, c3 = st.columns(3)
-            c1.metric("예측 조회수", f"{predicted_views:,}" if predicted_views is not None else "—")
-            c2.metric("평균 조회수", f"{peer_mean_views:,}" if peer_mean_views is not None else "—")
-            c3.metric("상위 10% 평균", f"{peer_top10_mean_views:,}" if peer_top10_mean_views is not None else "—")
+            c1, c2 = st.columns(2)
+            c1.metric("클러스터", f"{cluster}")
+            c2.metric("예측 조회수", f"{predicted_views:,}" if predicted_views is not None else "—")
+            c1, c2 = st.columns(2)
+            c1.metric("평균 조회수", f"{peer_mean_views:,}" if peer_mean_views is not None else "—")
+            c2.metric("상위 10% 평균", f"{peer_top10_mean_views:,}" if peer_top10_mean_views is not None else "—")
 
-            #st.metric("내 구독자 수", f"{int(row.get('subscriber_count',0)):,}")
         with cB:
             try:
                 st.image(thumb_input, caption="입력 썸네일", use_container_width=True)
@@ -362,7 +440,7 @@ if run:
         text_counts = pd.Series(Counter(text_tokens)).sort_values(ascending=False).head(10)
 
         
-
+        st.markdown(" ")
         with st.expander("🔍 썸네일 지표 더 알아보기"):
             # 두 개의 열로 배치
             c1, c2 = st.columns([1, 2])
@@ -610,7 +688,8 @@ if run:
                     st.info("OCR 텍스트 인식 결과가 없습니다.")
             else:
                 st.info("OCR 텍스트 인식 결과가 없습니다.")
-
+            
+            st.markdown(" ")
             st.markdown("**객체/텍스트 특성**")
             c1, c2 = st.columns([1, 1])
             
@@ -619,8 +698,8 @@ if run:
 
             # 시각화 공통 스타일 값
             bar_width = 0.35
-            my_color = "indianred"
-            peer_color = "silver"
+            my_color = "#80D2FF"
+            peer_color = "#5C6AFF"
 
             ############################
             # 1. 텍스트 위치 분포
@@ -721,21 +800,21 @@ if run:
 
         
         # === 피어 그룹 평균 핵심 지표 표 ===
-        if peer_avg_core:
-            st.markdown("---")
-            st.subheader("핵심 지표 비교")
-            peer_df_show = pd.DataFrame({
-                "지표": list(peer_avg_core.keys()),
-                "내 값": [row.get(k, np.nan) for k in peer_avg_core.keys()],
-                "평균": list(peer_avg_core.values())
-            })
-            st.dataframe(peer_df_show, use_container_width=True)
+        with st.expander("🔍 핵심 지표 더 알아보기"):
+            if peer_avg_core:
+                st.subheader("핵심 지표 비교")
+                peer_df_show = pd.DataFrame({
+                    "지표": list(peer_avg_core.keys()),
+                    "내 값": [row.get(k, np.nan) for k in peer_avg_core.keys()],
+                    "평균": list(peer_avg_core.values())
+                })
+                st.dataframe(peer_df_show, use_container_width=True)
 
        
         # 8) 피어 평균으로 맞추기 시뮬레이션 (회귀모델 + 피어 평균이 있을 때)
         if 'reg' in locals() and reg is not None and peer_avg_core:
             st.markdown("---")
-            st.header("🔧 만약 이렇게 바꾸면?")
+            st.header("🔧 A/B 테스트")
 
             # 회귀 예측 도우미
             def simulate(modified: dict):
@@ -793,25 +872,94 @@ if run:
                 pred_combo = simulate(improving_changes)
             else:
                 pred_combo = None
-    
-            st.subheader("상승 효과 있는 지표만 한꺼번에 바꿀 경우")
-            col_now, col_combo = st.columns(2)
-            col_now.metric(
-                "현재 예측 조회수",
-                f"{predicted_views:,}" if predicted_views is not None else "—"
-            )
-            col_combo.metric(
-                "상승 지표만 반영한 예측",
-                f"{pred_combo:,}" if pred_combo is not None else "—"
+                
+            # 현재 예측 조회수와 개선 후 예측 조회수 계산
+            current_pred_views = int(predicted_views) if predicted_views is not None else None
+            improved_pred_views = int(pred_combo) if pred_combo is not None else None
+
+            lift_abs = None
+            lift_pct = None
+            if current_pred_views is not None and improved_pred_views is not None:
+                lift_abs = improved_pred_views - current_pred_views
+                lift_pct = (lift_abs / current_pred_views) * 100 if current_pred_views > 0 else None
+
+            
+            st.markdown(" ")
+            st.markdown("### 핵심 성과 요약")
+
+            kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
+
+            # 카드 1: 현재 예측
+            kpi_col1.metric(
+                label="현재 예상 조회수",
+                value=(f"{current_pred_views:,}" if current_pred_views is not None else "—")
             )
 
-            # 개선에 사용된 지표들 리스트로 보여주기
-            if improving_changes:
-                st.caption("아래 지표들은 평균까지 올리면(또는 낮추면) 조회수 예측이 올라가는 요인으로 추정돼요:")
-                for k, v in improving_changes.items():
-                    st.write(f"• **{k} → {v}**")
-            else:
-                st.caption("평균으로 바꿔도 변화가 없었습니다.")
+            # 카드 2: 개선 시 예상 조회수
+            kpi_col2.metric(
+                label="개선 후 예상 조회수",
+                value=(f"{improved_pred_views:,}" if improved_pred_views is not None else "—"),
+                delta=(
+                    f"+{lift_abs:,}" if (lift_abs is not None and lift_abs > 0) else None
+                )
+            )
+
+            # 카드 3: 예상 향상률
+            kpi_col3.metric(
+                label="향상률(%)",
+                value=(f"{lift_pct:.1f}%" if lift_pct is not None else "—"),
+                delta=(
+                    f"+{lift_pct:.1f}%" if (lift_pct is not None and lift_pct > 0) else None
+                )
+            )
+            
+    
+            st.markdown("### 핵심 지표별 조정 방향")
+            top_change_rows = (
+                pd.DataFrame(sims)
+                .dropna(subset=["증감(예측)"])
+                .sort_values("증감(예측)", ascending=False)
+                .head(3)
+            )
+
+            for _, r in top_change_rows.iterrows():
+                render_change_row(
+                    label   = r["지표"],
+                    cur_val = r["현재값"],
+                    tgt_val = r["평균값"],
+                    gain    = r["증감(예측)"]
+                )
+                
+            # === 내러티브 요약 영역 ===
+            st.markdown(" ")
+            st.markdown("### 📌 인사이트 요약")
+
+            # 어떤 지표들이 가장 영향력 있는지 리스트업
+            driver_list = []
+            for _, r in top_change_rows.iterrows():
+                driver_list.append(f"{r['지표']}")
+
+            drivers_text = ", ".join(driver_list) if driver_list else "주요 지표 없음"
+
+            summary_lines = []
+
+            if current_pred_views is not None:
+                summary_lines.append(
+                    f"입력하신 내용으로 예상되는 조회수는 약 {current_pred_views:,}회입니다."
+                )
+
+            if improved_pred_views is not None and lift_abs is not None and lift_pct is not None:
+                summary_lines.append(
+                    f"핵심 지표 일부만 업계 평균 수준까지 조정하면 약 {improved_pred_views:,}회까지 기대할 수 있습니다. "
+                )
+
+            summary_lines.append(
+                f"특히 {drivers_text} 같은 요소가 조회수 상승 여력에 크게 기여하는 것으로 보입니다."
+            )
+
+            st.write("\n".join(f"- {line}" for line in summary_lines))
+
+
 
     except Exception as e:
         st.exception(e)
