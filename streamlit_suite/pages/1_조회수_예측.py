@@ -26,6 +26,24 @@ st.set_page_config(page_title="조회수 예측", layout="wide")
 st.title("📈 조회수 예측")
 
 # =============== 유틸 ===============
+FEATURE_LABELS = {
+    "title_length": "제목 길이",
+    "word_count": "제목 단어 수",
+    "emoji_count": "제목 이모지 수",
+    "special_char_count": "특수문자 수",
+    "person_count": "썸네일 사람 수",
+    "object_count": "썸네일 객체 수",
+    "has_text": "썸네일 텍스트 포함 여부",
+    "brightness": "썸네일 밝기",
+    "contrast": "썸네일 대비",
+    "has_question_mark": "제목 ? 포함 여부",
+    "has_exclamation": "제목 ! 포함 여부",
+    "duration": "영상 길이",
+}
+def get_label(k: str) -> str:
+    """영문 feature명을 한국어로 변환"""
+    return FEATURE_LABELS.get(k, k)
+
 def _safe_mean(series_like):
     try:
         return float(pd.to_numeric(series_like, errors="coerce").mean())
@@ -392,7 +410,7 @@ if run:
                 lift_abs = improved_pred_views - current_pred_views
                 lift_pct = (lift_abs / current_pred_views) * 100 if current_pred_views>0 else None
             top_change_rows = delta_views_df.dropna(subset=["증감(예측)"]).sort_values("증감(예측)",ascending=False).head(3)
-            drivers_text = ", ".join(top_change_rows["지표"].tolist()) if not top_change_rows.empty else ""
+            drivers_text = ", ".join(get_label(v) for v in top_change_rows["지표"].tolist()) if not top_change_rows.empty else ""
 
 
         st.success(f"분석이 완료됐습니다. 클러스터 {cluster}가 적용됩니다.")
@@ -410,7 +428,7 @@ if run:
             if improved_pred_views and lift_abs and lift_pct:
                 summary_lines.append(f"핵심 지표를 평균 수준으로 조정하면 약 {improved_pred_views:,}회까지 기대할 수 있습니다.")
             if drivers_text:
-                summary_lines.append(f"특히 {drivers_text} 지표가 조회수에 큰 영향을 주는 것으로 보입니다.")
+                summary_lines.append(f"특히 {drivers_text}가 조회수에 큰 영향을 주는 것으로 보입니다.")
             st.write("\n".join(f"- {s}" for s in summary_lines))
 
         with cB:
@@ -760,7 +778,7 @@ if run:
                 ax.bar([i - bar_width/2 for i in x_idx], my_vals, bar_width,
                     label="내 영상", color=my_color)
                 ax.bar([i + bar_width/2 for i in x_idx], peer_vals, bar_width,
-                    label="피어 평균", color=peer_color)
+                    label="평균", color=peer_color)
 
                 ax.set_xticks(list(x_idx))
                 ax.set_xticklabels(["왼쪽","중앙","오른쪽"])
@@ -783,7 +801,7 @@ if run:
                 ax.bar([i - bar_width/2 for i in x_idx], my_vals, bar_width,
                     label="내 영상", color=my_color)
                 ax.bar([i + bar_width/2 for i in x_idx], peer_vals, bar_width,
-                    label="피어 평균", color=peer_color)
+                    label="평균", color=peer_color)
 
                 ax.set_xticks(list(x_idx))
                 ax.set_xticklabels(["작음","중간","큼"])
@@ -808,7 +826,7 @@ if run:
                 ax.bar([i - bar_width/2 for i in x_idx], my_vals, bar_width,
                     label="내 영상", color=my_color)
                 ax.bar([i + bar_width/2 for i in x_idx], peer_vals, bar_width,
-                    label="피어 평균", color=peer_color)
+                    label="평균", color=peer_color)
 
                 ax.set_xticks(list(x_idx))
                 ax.set_xticklabels(["왼쪽","중앙","오른쪽"])
@@ -831,7 +849,7 @@ if run:
                 ax.bar([i - bar_width/2 for i in x_idx], my_vals, bar_width,
                     label="내 영상", color=my_color)
                 ax.bar([i + bar_width/2 for i in x_idx], peer_vals, bar_width,
-                    label="피어 평균", color=peer_color)
+                    label="평균", color=peer_color)
 
                 ax.set_xticks(list(x_idx))
                 ax.set_xticklabels(["작음","중간","큼"])
@@ -839,16 +857,13 @@ if run:
                 ax.set_title("사람 크기 분포")
                 ax.legend()
                 st.pyplot(fig)
-
-
-
         
         # === 피어 그룹 평균 핵심 지표 표 ===
         with st.expander("🔍 핵심 지표 더 알아보기"):
             if peer_avg_core:
                 st.subheader("핵심 지표 비교")
                 peer_df_show = pd.DataFrame({
-                    "지표": list(peer_avg_core.keys()),
+                    "지표": [get_label(k) for k in peer_avg_core.keys()],
                     "내 값": [row.get(k, np.nan) for k in peer_avg_core.keys()],
                     "평균": list(peer_avg_core.values())
                 })
@@ -874,6 +889,7 @@ if run:
             ]
 
             sims = []
+            sims_k = []
             for k in target_keys:
                 if k not in peer_avg_core:
                     continue
@@ -898,10 +914,17 @@ if run:
                     "평균으로 맞출 때 예측": pred_peer,
                     "증감(예측)": diff_val
                 })
+                sims_k.append({
+                    "지표": get_label(k),
+                    "현재값": cur_val,
+                    "평균값": peer_val,
+                    "평균으로 맞출 때 예측": pred_peer,
+                    "증감(예측)": diff_val
+                })
 
             # 시뮬 결과 표 보여주기
-            if sims:
-                st.dataframe(pd.DataFrame(sims), use_container_width=True)
+            if sims_k:
+                st.dataframe(pd.DataFrame(sims_k), use_container_width=True)
 
             # ===== [중요] 증감이 양수인 애들만 묶어서 한번에 바꾸면? =====
             improving_changes = {}
@@ -968,7 +991,7 @@ if run:
 
             for _, r in top_change_rows.iterrows():
                 render_change_row(
-                    label   = r["지표"],
+                    label   = get_label(r["지표"]),
                     cur_val = r["현재값"],
                     tgt_val = r["평균값"],
                     gain    = r["증감(예측)"]
