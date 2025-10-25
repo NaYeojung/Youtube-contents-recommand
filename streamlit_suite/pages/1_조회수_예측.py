@@ -201,6 +201,7 @@ def render_change_row(label, cur_val, tgt_val, gain=None):
     tgt_val: 추천/평균 값
     gain: 예상 조회수 증가량 (정수 or None)
     """
+    diff=float(cur_val)-float(tgt_val)
     arrow = "➡️"
     gain_txt = ""
     if gain is not None:
@@ -208,7 +209,32 @@ def render_change_row(label, cur_val, tgt_val, gain=None):
             gain_txt = f"<span style='color:#16a34a;font-weight:600;'>+{gain:,}↑</span>"
         elif gain < 0:
             gain_txt = f"<span style='color:#dc2626;font-weight:600;'>{gain:,}↓</span>"
-
+    
+    if abs(diff) < 1e-6:
+        # 거의 동일
+        base_phrase = "가 평균과 유사한 수준입니다."
+    else:
+        if diff > 0:
+            # 현재값이 더 큼
+            if "길이" in label:
+                base_phrase = "가 긴 편입니다."
+            elif "수" in label:
+                base_phrase = "가 많은 편입니다."
+            elif "밝기" in label or "대비" in label:
+                base_phrase = "가 높은 편입니다."
+            else:
+                base_phrase = "가 높은 편입니다."
+        else:
+            # 현재값이 더 작음
+            if "길이" in label:
+                base_phrase = "가 짧은 편입니다."
+            elif "수" in label:
+                base_phrase = "가 적은 편입니다."
+            elif "밝기" in label or "대비" in label:
+                base_phrase = "가 낮은 편입니다."
+            else:
+                base_phrase = "가 낮은 편입니다."
+                
     st.markdown(
         f"""
         <div style="
@@ -220,7 +246,9 @@ def render_change_row(label, cur_val, tgt_val, gain=None):
             font-size:18px;
             line-height:2;
         ">
-            <div style="font-weight:600; color:#111827; font-size:23px;">{label}</div>
+            <div style="font-weight:600; color:#111827; font-size:23px;">{label}
+            <span style="font-weigth:400; font-size:18px">{base_phrase} </span>
+            </div>
             <div style="color:#374151;">
                 <span style="color:#4b5563;"> 현재 </span>
                 <strong style="color:#111827;"> {cur_val:.1f} </strong>
@@ -421,6 +449,7 @@ if run:
         with cA:
             
             st.markdown("### 📌 인사이트 요약")
+            st.markdown(" ")
 
             summary_lines = []
             if current_pred_views:
@@ -429,7 +458,7 @@ if run:
                 summary_lines.append(f"핵심 지표를 평균 수준으로 조정하면 약 {improved_pred_views:,}회까지 기대할 수 있습니다.")
             if drivers_text:
                 summary_lines.append(f"특히 {drivers_text}가 조회수에 큰 영향을 주는 것으로 보입니다.")
-            st.write("\n".join(f"- {s}" for s in summary_lines))
+            st.write("\n".join(f"\n{s}" for s in summary_lines))
 
         with cB:
             try:
