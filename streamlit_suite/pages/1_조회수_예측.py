@@ -18,7 +18,7 @@ if WEB_DIR not in sys.path:
 try:
     from feature import process_user_input
 except Exception as e:
-    st.set_page_config(page_title="조회수 예측", layout="wide")
+    st.set_page_config(page_title="TubeBoost", layout="wide")
     st.error(f"feature.py import 실패: {e}")
     st.stop()
 
@@ -246,8 +246,8 @@ def render_change_row(label, cur_val, tgt_val, gain=None):
             font-size:18px;
             line-height:2;
         ">
-            <div style="font-weight:600; color:#111827; font-size:23px;">{label}
-            <span style="font-weigth:400; font-size:18px">{base_phrase} </span>
+            <div style="font-weight:600; color:#111827;">{label}
+            <span style="font-weigth:300;">{base_phrase}</span>
             </div>
             <div style="color:#374151;">
                 <span style="color:#4b5563;"> 현재 </span>
@@ -951,9 +951,6 @@ if run:
                     "증감(예측)": diff_val
                 })
 
-            # 시뮬 결과 표 보여주기
-            if sims_k:
-                st.dataframe(pd.DataFrame(sims_k), use_container_width=True)
 
             # ===== [중요] 증감이 양수인 애들만 묶어서 한번에 바꾸면? =====
             improving_changes = {}
@@ -1025,6 +1022,12 @@ if run:
                     tgt_val = r["평균값"],
                     gain    = r["증감(예측)"]
                 )
+            st.markdown(" ") 
+            st.markdown(" ")       
+            # 시뮬 결과 표 보여주기
+            if sims_k:
+                st.dataframe(pd.DataFrame(sims_k), use_container_width=True)
+
                 
 
     except Exception as e:

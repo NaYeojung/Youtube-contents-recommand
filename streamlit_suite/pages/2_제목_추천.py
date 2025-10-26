@@ -1,6 +1,6 @@
 import os, json, numpy as np, pandas as pd, streamlit as st, altair as alt
 
-st.set_page_config(page_title="추천제목 대시보드", layout="wide")
+st.set_page_config(page_title="TubeBoost", layout="wide")
 st.title("채널 기반 추천 콘텐츠")
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
@@ -70,7 +70,7 @@ def parse_count_series(series):
 #      title, published_date, view_count, like_count, comment_count
 # -------------------------------------------------
 def load_channel_df():
-    ch_path = os.path.join(DATA_DIR, "channel(@KoreanCryingGuy)_all_videos.csv")
+    ch_path = os.path.join(DATA_DIR, "channel(@KoreanCryingGuy)_videos_metadata.csv")
     if not os.path.exists(ch_path):
         return None
 
@@ -186,6 +186,8 @@ tpl_stats = first_non_none(load_csv("template_keyword_stats.csv"), load_csv("tem
 kw_stats  = first_non_none(load_csv("keyword_stats.csv"),          load_csv("keyword_stats_demo.csv"))
 feat_imp  = first_non_none(load_csv("feature_importances.csv"),    load_csv("feature_importances_demo.csv"))
 p10_style = first_non_none(load_json("p10_style.json"),            load_json("p10_style_demo.json"))
+candidates_df = first_non_none(load_csv("title_recommend_candidates.csv"),None)
+
 
 if reco is None:
     st.error("reco_results.csv가 필요합니다.")
@@ -342,7 +344,7 @@ if st.session_state["analysis_mode"]:
 
         # --- 상위 퍼포먼스 영상 TOP 5 테이블 ---
         st.markdown(" ")
-        st.markdown("#### 🔥 상위 퍼포먼스 영상 TOP 5")
+        st.markdown("#### 상위 퍼포먼스 영상 TOP 5")
         top5_df = (
             ch_sub.sort_values("_views", ascending=False)
                  .loc[:, ["title", "_views", "_likes", "_comments", "_published_dt"]]
@@ -367,7 +369,7 @@ if st.session_state["analysis_mode"]:
 
         # --- 조회수 추이 라인 차트 ---
         st.markdown(" ")
-        st.markdown("#### 📈 최근 조회수 추이")
+        st.markdown("#### 최근 조회수 추이")
 
         time_df = ch_sub.dropna(subset=["_published_dt", "_views"]).copy()
         if len(time_df) > 0:
@@ -387,7 +389,7 @@ if st.session_state["analysis_mode"]:
             st.caption("업로드일/조회수 정보가 부족해 조회수 추이를 표시할 수 없습니다.")
 
         # --- 반응 vs 조회수 산점도 ---
-        st.markdown("#### 🔁 반응 vs 조회수")
+        st.markdown("#### 반응 vs 조회수")
         corr_cols = st.columns(2)
 
         # 조회수 vs 좋아요수
@@ -428,7 +430,7 @@ if st.session_state["analysis_mode"]:
 
         # --- 업로드 타이밍 성과 ---
         st.markdown(" ")
-        st.markdown("#### 🕒 업로드 타이밍 성과")
+        st.markdown("#### 업로드 타이밍 성과")
         timing_cols = st.columns(2)
 
         # 요일별 평균 조회수
@@ -475,82 +477,252 @@ if st.session_state["analysis_mode"]:
 
         st.divider()
 
-    # ==========================
-    # 2) 추천 제목 카드 섹션
-    # ==========================
-    st.subheader("📝 추천 제목")
+        # ==========================
+        # 2) 추천 제목 카드 섹션
+        # ==========================
+        st.subheader("📝 추천 제목")
+        
+        import ast
+        import numpy as np
 
-    # 추천 제목 근거 문구 생성
-    def build_rationale(row, style):
-        parts = []
+        template_info = {}
 
-        # 템플릿/키워드
-        if isinstance(row.get("keyword_topk"), str):
-            parts.append(
-                f"템플릿 {row.get('template','?')}에서 상위 키워드 `{row['keyword_topk']}`를 반영했습니다."
-            )
+        if candidates_df is not None and len(candidates_df) > 0:
+            for tpl_name, g in candidates_df.groupby("template"):
+
+                # 후보 제목 목록
+                cand_titles = (
+                    g["title_candidate"]
+                    .dropna()
+                    .drop_duplicates()
+                    .tolist()
+                )
+
+                # 첫 행 기준 슬롯 정보
+                first_row = g.iloc[0]
+
+                # slot_mapping / slot_scores 파싱
+                def safe_parse(v):
+                    try:
+                        return ast.literal_eval(v) if isinstance(v, str) else v
+                    except Exception:
+                        return {}
+                slot_mapping = safe_parse(first_row.get("slot_mapping", "{}"))
+                slot_scores  = safe_parse(first_row.get("slot_scores", "{}"))
+
+                # 슬롯별 상위 키워드/점수 구조화
+                slot_top = {}
+                for col in g.columns:
+                    if col.endswith("_top_keywords"):
+                        slot_name = col.replace("_top_keywords", "")
+                        kw_list = safe_parse(first_row.get(col, []))
+                        sc_list = safe_parse(first_row.get(f"{slot_name}_top_scores", []))
+                        if isinstance(kw_list, (list, tuple)):
+                            items = []
+                            for i, kw in enumerate(kw_list):
+                                if kw is None or (isinstance(kw, float) and np.isnan(kw)):
+                                    continue
+                                score_val = None
+                                if isinstance(sc_list, (list, tuple)) and i < len(sc_list):
+                                    score_val = sc_list[i]
+                                items.append({"keyword": kw, "score": score_val})
+                            if items:
+                                slot_top[slot_name] = items
+
+                template_info[tpl_name] = {
+                    "candidates": cand_titles,
+                    "slot_mapping": slot_mapping,
+                    "slot_scores": slot_scores,
+                    "slot_top": slot_top,
+                }
         else:
-            parts.append(
-                f"템플릿 {row.get('template','?')}의 상위 키워드를 반영했습니다."
-            )
+            template_info = {}
 
-        feats = []
-        # 제목 길이 vs 상위10% 평균
-        if "title_len" in row and "p10_len" in row:
-            try:
-                if abs(row["title_len"] - row["p10_len"]) <= 3:
-                    feats.append("제목 길이가 상위 10% 평균과 유사")
-            except Exception:
-                pass
 
-        # 이모지 사용
-        if "emoji_count" in row and p10_style:
-            t = p10_style.get("emoji_target", None)
-            if t is not None:
-                try:
-                    if abs(row["emoji_count"] - t) <= 1:
-                        feats.append("이모지 사용이 상위 10% 범위")
-                except Exception:
-                    pass
+        # 예측 조회수 높은 순으로 정렬
+        df_view = df.sort_values(["predicted_views"], ascending=False).reset_index(drop=True)
 
-        # 느낌표 사용
-        if "exclaim_count" in row and p10_style:
-            t = p10_style.get("exclaim_target", None)
-            if t is not None:
-                try:
-                    if abs(row["exclaim_count"] - t) <= 1:
-                        feats.append("느낌표 사용이 상위 10% 범위")
-                except Exception:
-                    pass
+        for _, row in df_view.iterrows():
+            with st.container(border=True):
 
-        # 신선도 / 썸네일 점수
-        if "novelty_score" in row and row["novelty_score"] >= 0.4:
-            feats.append("제목 신선도(표현 다양성)가 높음")
-        if "thumbnail_score" in row and row["thumbnail_score"] >= 0.65:
-            feats.append("썸네일 가독성/대비 점수가 높음")
+                rec_title = row.get("recommended_title", "")
+                tpl_name  = row.get("template", "-")
 
-        if feats:
-            parts.append(" / ".join(feats))
+                st.markdown(f"##### {rec_title}")
+                st.write(f"**템플릿:** {tpl_name}")
 
-        return " ".join(parts)
+                with st.expander("자세히 알아보기"):
 
-    def safe_rationale(row, style):
-        try:
-            return str(build_rationale(row, style))
-        except Exception:
-            return ""
+                    # tinfo: 이 템플릿에 대한 전체 정보
+                    tinfo = template_info.get(tpl_name, {})
+                    cand_list = tinfo.get("candidates", []) if isinstance(tinfo, dict) else []
+                    slot_top = tinfo.get("slot_top", {}) if isinstance(tinfo, dict) else {}
 
-    # 추천 제목들 정렬 (예측 조회수 높은 순)
-    df_view = df.sort_values(["predicted_views"], ascending=False).reset_index(drop=True)
-    df_view["rationale"] = df_view.apply(lambda r: safe_rationale(r, p10_style), axis=1)
+                    # 레이아웃 2컬럼
+                    left_col, right_col = st.columns([0.45, 0.55])
 
-    # 카드 렌더
-    for _, row in df_view.iterrows():
-        with st.container(border=True):
-            st.markdown(f"##### {row['recommended_title']}")
-            cols_block = st.columns(1)
-            cols_block[0].write(f"**템플릿:** {row.get('template','-')}")
-            st.caption(row["rationale"])
+                    # -------------------------------------------------
+                    # (A) 같은 템플릿에서 생성된 후보 제목들 (왼쪽)
+                    # -------------------------------------------------
+                    import re
+
+                    with left_col:
+                        st.markdown("**같은 템플릿 후보 제목들**")
+
+                        if len(cand_list) == 0:
+                            st.caption("후보 없음")
+
+                        else:
+                            # 안전한 세션 키 생성
+                            safe_tpl_key = re.sub(r"[^a-zA-Z0-9_-]", "_", tpl_name)
+                            session_key = f"show_count_{safe_tpl_key}"
+
+                            # 세션 상태 초기화
+                            if session_key not in st.session_state:
+                                st.session_state[session_key] = 10
+
+                            show_n = st.session_state[session_key]
+
+                            # 만약 세션에 잘못된 값(>전체 길이)이 있다면 보정
+                            if show_n > len(cand_list):
+                                show_n = len(cand_list)
+
+                            # 실제로 보여줄 후보 리스트
+                            visible_candidates = cand_list[:show_n]
+
+                            # 카드 렌더
+                            for i_c, cand_title in enumerate(visible_candidates, start=1):
+                                is_main = (cand_title == rec_title)
+
+                                card_style = (
+                                    "border:1px solid #D1D5DB;"
+                                    "border-radius:6px;"
+                                    "padding:10px 12px;"
+                                    "margin-bottom:8px;"
+                                    "font-size:0.9rem;"
+                                    "line-height:1.4;"
+                                    "background-color:#FFFFFF;"
+                                    "color:#111;"
+                                    "white-space:normal;"
+                                    "word-break:break-word;"
+                                )
+
+                                if is_main:
+                                    card_style += "border:1px solid #A78BFA;background-color:#F5F3FF;"
+
+                                label_html = (
+                                    '<div style="font-size:0.7rem; color:#6B21A8; font-weight:500; margin-top:4px;">(현재 추천 제목)</div>'
+                                    if is_main else ""
+                                )
+
+                                card_html = f"""
+                                <div style="{card_style}">
+                                <div style="font-weight:600;">{i_c}. {cand_title}</div>
+                                {label_html}
+                                </div>
+                                """
+                                st.markdown(card_html, unsafe_allow_html=True)
+
+                            # 더 보기 버튼 (정확히 작동)
+                            if show_n < len(cand_list):
+                                if st.button("더 보기", key=f"morebtn_{safe_tpl_key}"):
+                                    st.session_state[session_key] = min(show_n + 10, len(cand_list))
+                                    st.rerun()
+
+                                        
+                    # -------------------------------------------------
+                    # (B) 슬롯별 상위 키워드 후보들 (오른쪽)
+                    # -------------------------------------------------
+                    with right_col:
+                        st.markdown("**슬롯별 상위 키워드 후보**")
+
+                        if len(slot_top) == 0:
+                            st.caption("슬롯 후보 키워드 정보 없음")
+                        else:
+                            # slot_top: { "SITUATION": [ {keyword, score}, ... ], "TOPIC": [...] }
+                            import numpy as _np
+                            import pandas as _pd
+
+                            for slot_name, items in slot_top.items():
+                                # DataFrame으로 변환하고 정렬/정규화
+                                slot_df = _pd.DataFrame(items)
+
+                                # score 숫자화
+                                slot_df["score"] = _pd.to_numeric(slot_df["score"], errors="coerce").fillna(0.0)
+
+                                # 상대 스케일: 이 슬롯 안에서 최고 점수를 100으로
+                                max_score = slot_df["score"].max()
+                                if max_score > 0:
+                                    slot_df["rel_score"] = (slot_df["score"] / max_score) * 100.0
+                                else:
+                                    slot_df["rel_score"] = 0.0
+
+                                # 보기 좋게 상위 5개만
+                                slot_df = slot_df.sort_values("rel_score", ascending=False).head(5)
+
+                                # 슬롯 블록 헤더
+                                st.markdown(
+                                    f"""
+                                    <div style="
+                                        font-weight:600;
+                                        font-size:0.95rem;
+                                        margin-top:1rem;
+                                        margin-bottom:0.5rem;
+                                        color:#222;
+                                    ">
+                                        {slot_name} 슬롯
+                                    </div>
+                                    """,
+                                    unsafe_allow_html=True
+                                )
+
+                                # 키워드별 게이지 바 렌더
+                                # rel_score를 막대 너비로 시각화 (0~100%)
+                                # 각각을 작은 카드처럼 반복 출력
+                                for _, rslot in slot_df.iterrows():
+                                    kw_text   = str(rslot.get("keyword", ""))
+                                    rel_score = float(rslot.get("rel_score", 0.0))
+
+                                    # 점수 라벨은 퍼센트 느낌
+                                    # 예: 87.5 → "87"
+                                    score_label = f"{rel_score:.0f}"
+
+                                    st.markdown(
+                                        f"""
+                                        <div style="
+                                            border:1px solid #E5E7EB;
+                                            border-radius:6px;
+                                            padding:8px 10px;
+                                            margin-bottom:6px;
+                                            background-color:#FAFAFA;
+                                            font-size:0.85rem;
+                                            line-height:1.4;
+                                        ">
+                                            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                                                <div style="font-weight:500; color:#111;">{kw_text}</div>
+                                                <div style="font-size:0.8rem; color:#555;">적합도 {score_label}</div>
+                                            </div>
+                                            <div style="
+                                                width:100%;
+                                                background-color:#EEE;
+                                                border-radius:4px;
+                                                height:6px;
+                                                overflow:hidden;
+                                            ">
+                                                <div style="
+                                                    width:{rel_score}%;
+                                                    background-color:#4F46E5;
+                                                    height:6px;
+                                                    border-radius:4px;
+                                                "></div>
+                                            </div>
+                                        </div>
+                                        """,
+                                        unsafe_allow_html=True
+                                    )
+
+                            # 슬롯 섹션 전체 끝나고 약간 여백
+                            st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
 
     # ==========================
     # 3) GLOBAL INSIGHTS
