@@ -214,6 +214,7 @@ with hero_left:
     st.markdown(
         "채널의 업로드 패턴·조회수·반응(좋아요/댓글)을 읽고, "
         "**해당 채널에서 잘 터지는 제목 스타일**을 뽑아냅니다."
+        " 내 채널 영상 뿐만 아니라 유사한 채널들의 인기 동영상을 통해 **트렌드를 반영**합니다."
     )
     st.caption(
         "업로드 타이밍, 시청자 반응도, 터진 영상의 공통 구조를 기반으로 "
@@ -582,7 +583,7 @@ if st.session_state["analysis_mode"]:
 
             with st.container(border=True):
                 st.markdown(f"##### {rec_title}")
-                st.write(f"**템플릿:** {tpl_name}")
+                st.write(f"템플릿: {tpl_name}")
 
                 with st.expander("자세히 보기"):
                     tinfo = template_info.get(tpl_name, {})
@@ -637,7 +638,7 @@ if st.session_state["analysis_mode"]:
                                 st.markdown(
                                     f"""
                                     <div style="{base_style}">
-                                        <div style="font-weight:600;">{i_c}. {cand_title}</div>
+                                        <div style="font-weight:500;">{i_c}. {cand_title}</div>
                                         {label_html}
                                     </div>
                                     """,
@@ -732,42 +733,341 @@ if st.session_state["analysis_mode"]:
         # =========================
         st.subheader("4. 템플릿 / 키워드 트렌드 패턴")
 
-        with st.container(border=True):
-            # 템플릿 활용 비중
-            if tpl_stats is not None:
-                st.markdown("**템플릿 활용 비중 TOP**")
-                top_tpl = tpl_stats.sort_values("share", ascending=False).head(8)
-                chart_tpl = (
-                    alt.Chart(top_tpl)
-                    .mark_bar()
-                    .encode(
-                        x=alt.X("share:Q", axis=alt.Axis(format="%"), title="활용 비중"),
-                        y=alt.Y("template:N", sort="-x", title="템플릿"),
-                        tooltip=["template", "share", "avg_pred_views", "count"]
-                    )
-                )
-                st.altair_chart(chart_tpl, use_container_width=True)
+        # -------------------------------------------------
+        # (B) 실제 업로드에서 쓰였던 템플릿 분석
+        #     title_template.json 기반
+        # -------------------------------------------------
+        st.markdown("#### 📚 실제 업로드에 많이 쓰인 템플릿")
+        st.caption(
+            "과거 업로드 영상의 제목에서 반복적으로 등장한 문장 구조(템플릿)를 뽑았습니다. "
+            "이 채널이 '자주 쓰는 톤'과 '먹히는 포맷'이 뭔지 볼 수 있어요."
+        )
 
-            # 키워드 영향력
-            if kw_stats is not None:
-                st.markdown("**키워드 영향력**")
-                kw_mode = st.radio(
-                    "정렬 기준",
-                    ["score_sum"],
-                    horizontal=True,
-                    key="kw_sort"
-                )
-                top_kw = kw_stats.sort_values(kw_mode, ascending=False).head(15)
-                chart_kw = (
-                    alt.Chart(top_kw)
-                    .mark_bar()
-                    .encode(
-                        x=alt.X(f"{kw_mode}:Q", title=kw_mode),
-                        y=alt.Y("keyword:N", sort="-x", title="키워드"),
-                        tooltip=["keyword", "score_avg", "score_sum", "freq"]
+        # title_template.json 불러오기
+        template_json_path = os.path.join(DATA_DIR, "title_template.json")
+        template_df = None
+        if os.path.exists(template_json_path):
+            try:
+                with open(template_json_path, "r", encoding="utf-8") as f:
+                    raw_list = json.load(f)  # [{original_title, template, keywords, ...}, ...]
+                template_df = pd.DataFrame(raw_list)
+            except Exception as e:
+                st.warning(f"title_template.json 로드 실패: {e}")
+                template_df = None
+        else:
+            st.info("title_template.json 파일을 찾을 수 없습니다.")
+            template_df = None
+
+        if template_df is not None and len(template_df) > 0:
+            # 최소 필요한 컬럼 정리
+            work_df = template_df.copy()
+            if "original_title" not in work_df.columns:
+                work_df["original_title"] = "(제목 없음)"
+            if "template" not in work_df.columns:
+                work_df["template"] = "(unknown)"
+            if "keywords" not in work_df.columns:
+                work_df["keywords"] = [[] for _ in range(len(work_df))]
+
+            # 템플릿별 그룹화
+            grp = (
+                work_df.groupby("template", as_index=False)
+                    .agg({
+                            "original_title": list,   # 이 템플릿으로 된 영상들 제목 리스트
+                            "keywords": list         # 이 템플릿의 키워드들 모음(리스트들의 리스트일 확률 높음)
+                        })
+            )
+            grp["count"] = grp["original_title"].apply(lambda lst: len(lst))
+
+            # 많이 쓴 템플릿 순으로 정렬
+            grp = grp.sort_values("count", ascending=False).reset_index(drop=True)
+
+            # ---- 캐러셀 상태 관리 ----
+            # 한 "슬라이드"에서 보여줄 카드 수
+            CARDS_PER_PAGE = 3
+
+            # 전체 템플릿을 CARDS_PER_PAGE씩 묶으면 몇 페이지?
+            total_templates = len(grp)
+            total_pages = int(np.ceil(total_templates / CARDS_PER_PAGE))  # 예: 8개 템플릿이면 3페이지(3,3,2)
+
+            # 세션 스테이트 초기화
+            if "tpl_carousel_page" not in st.session_state:
+                st.session_state["tpl_carousel_page"] = 0  # 0-based index (0페이지 = Top1~3)
+
+            
+            # ---- 현재 페이지에 해당하는 3개 템플릿만 뽑기 ----
+            start_idx = st.session_state["tpl_carousel_page"] * CARDS_PER_PAGE
+            end_idx   = start_idx + CARDS_PER_PAGE
+            page_slice = grp.iloc[start_idx:end_idx].reset_index(drop=True)
+
+            # 3등분 레이아웃
+            card_cols = st.columns(3)
+
+            for c_i in range(3):
+                col = card_cols[c_i]
+
+                if c_i >= len(page_slice):
+                    # 이 페이지에 실제 카드 개수가 2개만 있다면, 마지막 칸은 비워둔다
+                    continue
+
+                row_tpl = page_slice.iloc[c_i]
+
+                tpl_str = row_tpl["template"]
+                tpl_cnt = int(row_tpl["count"])
+
+                # keywords 필드가 리스트들의 리스트 형태일 수 있으므로 평탄화
+                kw_all = []
+                for kw_list in row_tpl["keywords"]:
+                    if isinstance(kw_list, list):
+                        for k in kw_list:
+                            if isinstance(k, (str, int, float)):
+                                kw_all.append(str(k))
+                    elif isinstance(kw_list, str):
+                        kw_all.append(kw_list)
+
+                # 가장 많이 등장한 키워드 Top5
+                if len(kw_all) > 0:
+                    kw_freq_s = (
+                        pd.Series(kw_all)
+                        .value_counts()
+                        .head(5)
                     )
+                    kw_top5 = kw_freq_s.index.tolist()
+                else:
+                    kw_top5 = []
+
+                # 키워드 칩 HTML
+                kw_html = ""
+                for kw in kw_top5:
+                    kw_html += f"""
+                    <span style="
+                        display:inline-block;
+                        background-color:#F9FAFB;
+                        border:1px solid #E5E7EB;
+                        border-radius:999px;
+                        padding:4px 10px;
+                        font-size:12px;
+                        line-height:1.2;
+                        color:#374151;
+                        margin:2px 4px 2px 0;
+                        white-space:nowrap;
+                    ">{kw}</span>
+                    """
+
+                col.markdown(
+                    f"""
+                    <div style="
+                        border:1px solid #E5E7EB;
+                        border-radius:12px;
+                        padding:16px 16px 12px;
+                        background:#FFFFFF;
+                        box-shadow:0 12px 24px rgba(0,0,0,0.03);
+                        height:100%;
+                        display:flex;
+                        flex-direction:column;
+                        justify-content:space-between;
+                    ">
+                    <div style="font-size:0.8rem;font-weight:600;color:#6B21A8;">
+                        TOP {start_idx + c_i + 1} 템플릿
+                    </div>
+                    <div style="
+                        font-size:1rem;
+                        font-weight:600;
+                        color:#111;
+                        line-height:1.5;
+                        word-break:break-word;
+                        margin-top:4px;
+                    ">
+                        {tpl_str}
+                    </div>
+
+                    <div style="
+                        font-size:0.9rem;
+                        color:#4B5563;
+                        margin-top:8px;
+                        line-height:1.4;
+                    ">
+                        총 <b style="color:#111;">{tpl_cnt}개</b> 영상에서 사용
+                    </div>
+
+                    <div style="margin-top:10px;font-size:0.8rem;color:#6B7280;">
+                        반복적으로 쓰인 키워드
+                    </div>
+                    <div style="margin-top:4px;display:flex;flex-wrap:wrap;">
+                        {kw_html if kw_html else "<span style='font-size:0.8rem;color:#9CA3AF;'>-</span>"}
+                    </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
                 )
-                st.altair_chart(chart_kw, use_container_width=True)
+                # 상단: 네비게이션 (이전 / 현재페이지 / 다음)
+                
+            st.markdown("")
+            nav_left, nav_mid, nav_right = st.columns([0.13, 0.79, 0.08])
+
+            with nav_left:
+                if st.button("◀ 이전", disabled=(st.session_state["tpl_carousel_page"] <= 0), key="tpl_prev_btn"):
+                    if st.session_state["tpl_carousel_page"] > 0:
+                        st.session_state["tpl_carousel_page"] -= 1
+                    st.rerun()
+
+            with nav_mid:
+                cur_page = st.session_state["tpl_carousel_page"]
+                # 사람 눈에는 1페이지부터 보이도록 +1
+                st.markdown(
+                    f"<div style='text-align:center; font-size:0.85rem; color:#4B5563;'>"
+                    f"Page {cur_page+1} / {total_pages}"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+                st.markdown(
+                    "<div style='text-align:center; font-size:0.7rem; color:#9CA3AF;'>"
+                    "</div>",
+                    unsafe_allow_html=True
+                )
+
+            with nav_right:
+                if st.button("다음 ▶", disabled=(st.session_state["tpl_carousel_page"] >= total_pages-1), key="tpl_next_btn"):
+                    if st.session_state["tpl_carousel_page"] < total_pages-1:
+                        st.session_state["tpl_carousel_page"] += 1
+                    st.rerun()
+
+            st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)
+
+
+            st.markdown("<div style='height:1rem;'></div>", unsafe_allow_html=True)
+
+            # -------------------------------------------------
+            # 템플릿별 실제 사례 상세 보기
+            # -------------------------------------------------
+            c1, c3, c2=st.columns([0.9,0.1,1])
+            with c1:
+                st.markdown("#### 📺 템플릿별 실제 영상 제목 모음")
+                st.caption("해당 템플릿으로 실제 업로드된 영상 제목 예시입니다.")
+
+                # 🔹 상위 15개 템플릿만 선택
+                top15_grp = grp.head(15)
+
+                for i, row_tpl in top15_grp.iterrows():
+                    tpl_str = row_tpl["template"]
+                    titles_list = row_tpl["original_title"]
+                    use_cnt = int(row_tpl["count"])
+
+                    with st.expander(f"{i+1}. {tpl_str}"):
+                        # 너무 많으면 상위 30개만
+                        ex_titles = titles_list[:30]
+
+                        for rank, t in enumerate(ex_titles, start=1):
+                            st.markdown(
+                                f"""
+                                <div style="
+                                    border:1px solid #E5E7EB;
+                                    border-radius:8px;
+                                    padding:8px 10px;
+                                    margin-bottom:6px;
+                                    background-color:#FFFFFF;
+                                    box-shadow:0 4px 8px rgba(0,0,0,0.02);
+                                    font-size:0.8rem;
+                                    line-height:1.4;
+                                    color:#111827;
+                                ">
+                                    <div style="font-weight:500;color:#111;">
+                                        {rank}. {t}
+                                    </div>
+                                </div>
+                                """,
+                                unsafe_allow_html=True
+                            )
+
+                        if len(titles_list) > 30:
+                            st.caption(f"... 그 외 {len(titles_list)-30}개 더 있음")
+        else:
+            st.info("템플릿 분석 데이터(title_template.json)가 없어 트렌드 캐러셀을 표시할 수 없습니다.")
+
+        # 키워드 영향력
+        with c2:
+            if kw_stats is not None and len(kw_stats) > 0:
+                st.markdown("#### 🧠 키워드 영향력")
+                st.caption("예측 모델에서 강하게 작용한 키워드일수록 더 크고 진하게 표시됩니다.")
+
+                if kw_stats is not None and len(kw_stats) > 0:
+                    # 1) 점수 기준 선택 (지금은 score_sum 하나지만 라디오 유지 가능)
+                    kw_mode = st.radio(
+                        "정렬 기준",
+                        ["score_sum"],
+                        horizontal=True,
+                        key="kw_sort_trend_sidebar_wordcloud"
+                    )
+
+                    # 2) 상위 키워드 추출
+                    top_kw = kw_stats.sort_values(kw_mode, ascending=False).head(50).copy()
+                    # 너무 많으면 복잡해 보이니까 50개 정도까지만 사용
+
+                    # 3) 점수 정규화해서 시각화 스타일 계산
+                    #    점수 최댓값/최솟값 기준으로 폰트 크기와 불투명도(alpha) 스케일링
+                    vals = pd.to_numeric(top_kw[kw_mode], errors="coerce").fillna(0.0)
+                    max_v = vals.max() if len(vals) else 1.0
+                    min_v = vals.min() if len(vals) else 0.0
+                    span = max(max_v - min_v, 1e-6)
+
+                    # 각 키워드별 스타일 만들기
+                    chips_html = ""
+                    for _, r in top_kw.iterrows():
+                        word = str(r.get("keyword", "")).strip()
+                        score_raw = float(r.get(kw_mode, 0.0))
+
+                        # 0.0~1.0 로 스케일
+                        norm = (score_raw - min_v) / span
+                        # 폰트 크기: 0.0 -> 11px, 1.0 -> 28px 사이
+                        font_px = 11 + norm * (28 - 11)
+                        # 투명도: 0.0 -> 0.4, 1.0 -> 1.0
+                        alpha = 0.4 + norm * (1.0 - 0.4)
+
+                        # 살짝 회전 줄 수도 있지만, 가독성 떨어지면 빼는 게 낫다.
+                        # 여기선 회전은 안 넣고 대신 약간의 색 변화를 줘도 된다.
+                        # hue는 고정하고 alpha만 조절하는 방식으로 충분히 "구름" 느낌 남.
+
+                        chips_html += f"""
+                    <span style="
+                    display:inline-block;
+                    margin:6px 8px;
+                    line-height:1.2;
+                    font-weight:600;
+                    color:rgba(31,41,55,{alpha});
+                    font-size:{font_px:.1f}px;
+                    white-space:nowrap;
+                    " title="{word} • 점수 {score_raw:.1f}">
+                    {word}
+                    </span>
+                        """
+
+                    # 4) 전체 워드클라우드 블럭으로 렌더
+                    st.markdown(
+                        f"""
+                        <div style="
+                        border:1px solid #E5E7EB;
+                        border-radius:12px;
+                        background:#FFFFFF;
+                        box-shadow:0 12px 24px rgba(0,0,0,0.03);
+                        padding:16px;
+                        min-height:260px;
+                        display:flex;
+                        flex-wrap:wrap;
+                        align-content:flex-start;
+                        align-items:flex-start;
+                        font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;
+                    ">
+                    {chips_html}
+                    </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+
+                else:
+                    st.info("키워드 통계(kw_stats)가 없습니다.")
+
+
+            else:
+                st.info("템플릿 분석 데이터(title_template.json)가 없어 트렌드 분석을 표시할 수 없습니다.")
 
     else:
         st.warning("채널 데이터를 찾을 수 없습니다. CSV 경로/파일을 확인해 주세요.")

@@ -102,7 +102,7 @@ feat_col1, feat_col2 = st.columns(2)
 
 with feat_col1:
     with st.container(border=True):
-        st.markdown("**기능 01 · 영상 단위 분석**")
+        st.markdown("**기능 01. 영상 단위 분석**")
         st.markdown("#### 제목 / 썸네일 기반 조회수 예측")
         st.write(
             "- 영상의 제목, 썸네일 특징, 키워드 톤을 분석해\n"
@@ -112,7 +112,7 @@ with feat_col1:
 
         st.markdown(
             """
-            <div style="
+            <a href="/조회수_예측" target="_self" style="
                 display:inline-block;
                 background-color:#4338CA;
                 color:#fff;
@@ -122,12 +122,14 @@ with feat_col1:
                 border-radius:8px;
                 border:1px solid #4338CA;
                 margin-top:0.5rem;
+                text-decoration:none;
             ">
                 ▶ 영상별 조회수 예측
-            </div>
+            </a>
             """,
             unsafe_allow_html=True
         )
+        st.markdown("")
         st.caption("제목과 썸네일 이미지를 넣으면 결과를 볼 수 있어요.")
         st.markdown(
             '<p style="color:#4338CA; font-size:0.8rem; font-weight:500;">'
@@ -138,7 +140,7 @@ with feat_col1:
 
 with feat_col2:
     with st.container(border=True):
-        st.markdown("**기능 02 · 채널 단위 분석**")
+        st.markdown("**기능 02. 채널 단위 분석**")
         st.markdown("#### 채널 맞춤 분석 & 추천 제목 생성")
         st.write(
             "- 채널 업로드 빈도, 시간대, 반응(좋아요율/댓글율)을 분석하고\n"
@@ -148,7 +150,7 @@ with feat_col2:
 
         st.markdown(
             """
-            <div style="
+            <a href="/제목_추천" target="_self" style="
                 display:inline-block;
                 background-color:#065F46;
                 color:#fff;
@@ -158,9 +160,10 @@ with feat_col2:
                 border-radius:8px;
                 border:1px solid #065F46;
                 margin-top:0.5rem;
+                text-decoration:none;
             ">
                 ▶ 채널 분석 & 추천 제목
-            </div>
+            </a>
             """,
             unsafe_allow_html=True
         )
@@ -220,7 +223,7 @@ st.markdown(
         크리에이터의 시간을 아끼고,<br/>
         제목과 썸네일로 끌 수 있는 잠재 조회수를 극대화하기 위해 만들어졌습니다.
         <br/><br/>
-        이제 사이드바에서 원하는 기능을 선택해 시작하세요 👇
+        이제 사이드바에서 원하는 기능을 선택해 시작하세요.
     </div>
     """,
     unsafe_allow_html=True
