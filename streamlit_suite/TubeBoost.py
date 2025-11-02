@@ -129,7 +129,6 @@ with feat_col1:
             """,
             unsafe_allow_html=True
         )
-        st.markdown("")
         st.caption("제목과 썸네일 이미지를 넣으면 결과를 볼 수 있어요.")
         st.markdown(
             '<p style="color:#4338CA; font-size:0.8rem; font-weight:500;">'

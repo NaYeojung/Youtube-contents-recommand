@@ -943,28 +943,30 @@ if run:
                 if "peer_avg_dict" not in locals():
                     peer_avg_dict = {}
 
-                bar_width = 0.35
-                my_color = "#80D2FF"
+                bar_width = 0.3
+                my_color = "#3B7A60"
                 peer_color = "#5C6AFF"
 
                 # 텍스트 위치 분포
-                c_txt_pos, c_txt_size = st.columns(2)
+                a, c_txt_pos, b, c_txt_size, c = st.columns([0.2,1,0.2,1,0.2])
                 with c_txt_pos:
                     text_pos_keys = ["text_left","text_middle","text_right"]
                     x_idx = range(len(text_pos_keys))
                     my_vals = [int(row.get(k, 0)) for k in text_pos_keys]
                     peer_vals = [peer_avg_dict.get(k, 0.0) for k in text_pos_keys]
 
-                    fig, ax = plt.subplots()
+                    fig, ax = plt.subplots(figsize=(3, 2))
                     ax.bar([i - bar_width/2 for i in x_idx], my_vals, bar_width,
                            label="내 영상", color=my_color)
                     ax.bar([i + bar_width/2 for i in x_idx], peer_vals, bar_width,
                            label="평균", color=peer_color)
                     ax.set_xticks(list(x_idx))
-                    ax.set_xticklabels(["왼쪽","중앙","오른쪽"])
-                    ax.set_ylabel("텍스트 박스 수")
-                    ax.set_title("텍스트 위치 분포")
-                    ax.legend()
+                    ax.set_xticklabels(["왼쪽","중앙","오른쪽"], fontsize=6)
+                    ax.set_ylabel("텍스트 박스 수", fontsize=6)
+                    ax.set_title("텍스트 위치 분포", fontsize=6)
+                    ax.legend(fontsize=6)
+                    ax.tick_params(axis='y', labelsize=6)
+
                     st.pyplot(fig)
 
                 with c_txt_size:
@@ -973,36 +975,40 @@ if run:
                     my_vals = [int(row.get(k, 0)) for k in text_size_keys]
                     peer_vals = [peer_avg_dict.get(k, 0.0) for k in text_size_keys]
 
-                    fig, ax = plt.subplots()
+                    fig, ax = plt.subplots(figsize=(3, 2))
                     ax.bar([i - bar_width/2 for i in x_idx], my_vals, bar_width,
                            label="내 영상", color=my_color)
                     ax.bar([i + bar_width/2 for i in x_idx], peer_vals, bar_width,
                            label="평균", color=peer_color)
                     ax.set_xticks(list(x_idx))
-                    ax.set_xticklabels(["작음","중간","큼"])
-                    ax.set_ylabel("텍스트 박스 수")
-                    ax.set_title("텍스트 크기 분포")
-                    ax.legend()
+                    ax.set_xticklabels(["작음","중간","큼"], fontsize=6)
+                    ax.set_ylabel("텍스트 박스 수", fontsize=6)
+                    ax.set_title("텍스트 크기 분포", fontsize=6)
+                    ax.legend(fontsize=6)
+                    ax.tick_params(axis='y', labelsize=6)
+
                     st.pyplot(fig)
 
                 # 사람 위치/크기 분포
-                c_p_pos, c_p_size = st.columns(2)
+                a, c_p_pos, b, c_p_size, c = st.columns([0.2,1,0.2,1,0.2])
                 with c_p_pos:
                     person_pos_keys = ["person_left","person_middle","person_right"]
                     x_idx = range(len(person_pos_keys))
                     my_vals = [int(row.get(k, 0)) for k in person_pos_keys]
                     peer_vals = [peer_avg_dict.get(k, 0.0) for k in person_pos_keys]
 
-                    fig, ax = plt.subplots()
+                    fig, ax = plt.subplots(figsize=(3, 2))
                     ax.bar([i - bar_width/2 for i in x_idx], my_vals, bar_width,
                            label="내 영상", color=my_color)
                     ax.bar([i + bar_width/2 for i in x_idx], peer_vals, bar_width,
                            label="평균", color=peer_color)
                     ax.set_xticks(list(x_idx))
-                    ax.set_xticklabels(["왼쪽","중앙","오른쪽"])
-                    ax.set_ylabel("사람 수")
-                    ax.set_title("사람 위치 분포")
-                    ax.legend()
+                    ax.set_xticklabels(["왼쪽","중앙","오른쪽"], fontsize=6)
+                    ax.set_ylabel("사람 수", fontsize=6)
+                    ax.set_title("사람 위치 분포", fontsize=6)
+                    ax.legend(fontsize=6)
+                    ax.tick_params(axis='y', labelsize=6)
+
                     st.pyplot(fig)
 
                 with c_p_size:
@@ -1011,16 +1017,18 @@ if run:
                     my_vals = [int(row.get(k, 0)) for k in person_size_keys]
                     peer_vals = [peer_avg_dict.get(k, 0.0) for k in person_size_keys]
 
-                    fig, ax = plt.subplots()
+                    fig, ax = plt.subplots(figsize=(3, 2))
                     ax.bar([i - bar_width/2 for i in x_idx], my_vals, bar_width,
                            label="내 영상", color=my_color)
                     ax.bar([i + bar_width/2 for i in x_idx], peer_vals, bar_width,
                            label="평균", color=peer_color)
                     ax.set_xticks(list(x_idx))
-                    ax.set_xticklabels(["작음","중간","큼"])
-                    ax.set_ylabel("사람 수")
-                    ax.set_title("사람 크기 분포")
-                    ax.legend()
+                    ax.set_xticklabels(["작음","중간","큼"], fontsize=6)
+                    ax.set_ylabel("사람 수", fontsize=6)
+                    ax.set_title("사람 크기 분포", fontsize=6)
+                    ax.legend(fontsize=6)
+                    ax.tick_params(axis='y', labelsize=6)
+
                     st.pyplot(fig)
 
         st.markdown("---")
